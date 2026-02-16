@@ -1,284 +1,226 @@
 // ============================================
-// Voice Chat Room Page
+// Room Page — Voice Chat
 // ============================================
-// This is where the actual voice chat happens!
-// Uses LiveKit to stream audio between participants.
+// The main voice chat UI.
+// Shows participants and handles audio.
 
-import { database, ref, set, remove, onValue, update } from '../firebase.js';
-import {
-    connectToRoom,
-    toggleMicrophone,
-    isMicMuted,
-    getParticipants,
-    leaveRoom,
-    getCurrentRoom
-} from '../livekit.js';
-
-let participantsListener = null;
+import { connectToRoom, leaveRoom, toggleMicrophone, isMicMuted, getParticipants, getCurrentRoom } from '../livekit.js';
+import { database, ref, update, get } from '../firebase.js';
 
 /**
- * Render the voice chat room page
- * @param {string} roomId - Firebase room ID
- * @param {string} roomName - Display name of the room
- * @param {Function} onLeave - Called when user leaves the room
+ * Render the Room
+ * @param {string} roomId - The Firebase ID for the room
+ * @param {string} roomName - The display name of the room
+ * @param {Function} onLeaveRoom - Called when user clicks "Leave"
  */
-export function renderRoom(roomId, roomName, onLeave) {
+export async function renderRoom(roomId, roomName, onLeaveRoom) {
     const app = document.getElementById('app');
 
-    // Ask for the user's display name
-    const userName = promptForName();
-    if (!userName) {
-        onLeave();
-        return;
-    }
-
-    // Store the user name for this session
-    sessionStorage.setItem('ybk_username', userName);
-
-    app.innerHTML = `
-    <div class="room-page">
-      <!-- Room Header -->
-      <div class="room-header">
-        <div class="room-header-info">
-          <h1>🔊 ${escapeHtml(roomName)}</h1>
-          <p>
-            <span class="live-dot"></span>
-            <span id="participantCount">Connecting...</span>
-          </p>
-        </div>
-      </div>
-
-      <!-- Participants Grid -->
-      <div class="participants-grid" id="participantsGrid">
-        <div style="text-align: center; padding: 40px; grid-column: 1 / -1;">
-          <div class="spinner" style="margin: 0 auto 12px;"></div>
-          <p style="color: var(--text-muted);">Connecting to voice room...</p>
-        </div>
-      </div>
-
-      <!-- Room Controls -->
-      <div class="room-controls glass-card">
-        <button class="control-btn control-btn-mic" id="micBtn" title="Toggle Microphone" disabled>
-          🎤
-        </button>
-        <button class="control-btn control-btn-leave" id="leaveBtn" title="Leave Room">
-          📞
-        </button>
-      </div>
-    </div>
-  `;
-
-    // --- Connect to LiveKit ---
-    initVoiceChat(roomId, roomName, userName, onLeave);
-}
-
-/**
- * Prompt user for their display name
- */
-function promptForName() {
-    const storedName = sessionStorage.getItem('ybk_username');
-    if (storedName) return storedName;
-
-    let name = null;
-    while (!name) {
-        name = prompt('Enter your display name for the voice chat:');
-        if (name === null) return null; // User clicked cancel
-        name = name.trim();
-        if (!name) {
-            alert('Please enter a valid name!');
-            name = null;
-        }
-        if (name && name.length > 20) {
-            alert('Name must be 20 characters or less!');
-            name = null;
-        }
-    }
-    return name;
-}
-
-/**
- * Initialize the voice chat connection
- */
-async function initVoiceChat(roomId, roomName, userName, onLeave) {
-    const micBtn = document.getElementById('micBtn');
-    const leaveBtn = document.getElementById('leaveBtn');
-    const participantsGrid = document.getElementById('participantsGrid');
-    const participantCount = document.getElementById('participantCount');
-
-    // Add ourselves to Firebase participants
-    const userParticipantRef = ref(database, `rooms/${roomId}/participants/${userName}`);
-    await set(userParticipantRef, {
-        name: userName,
-        joinedAt: Date.now()
-    });
-
-    try {
-        // Connect to LiveKit
-        const room = await connectToRoom(roomName, userName, {
-            onParticipantJoined: (participant) => {
-                updateParticipantsUI();
-                showToast(`${participant.identity} joined! 👋`);
-            },
-
-            onParticipantLeft: (participant) => {
-                updateParticipantsUI();
-                showToast(`${participant.identity} left`);
-            },
-
-            onTrackSubscribed: (track, participant) => {
-                updateParticipantsUI();
-            },
-
-            onActiveSpeakerChanged: (speakers) => {
-                // Highlight speaking participants
-                document.querySelectorAll('.participant-card').forEach(card => {
-                    card.classList.remove('speaking');
-                });
-                speakers.forEach(speaker => {
-                    const card = document.querySelector(`[data-identity="${speaker.identity}"]`);
-                    if (card) card.classList.add('speaking');
-                });
-            },
-
-            onDisconnected: () => {
-                handleLeave(roomId, userName, onLeave);
+    // --- Update Firebase Participant Count (+1) ---
+    // We only update if it's a real room (not the static OYO/Gaali ones)
+    if (roomId !== 'oyo-room-permanent' && roomId !== 'gaali-room-permanent') {
+        const roomRef = ref(database, `rooms/${roomId}`);
+        get(roomRef).then((snapshot) => {
+            if (snapshot.exists()) {
+                const currentCount = snapshot.val().participants || 0;
+                update(roomRef, { participants: currentCount + 1 });
             }
         });
-
-        // Enable mic button
-        micBtn.disabled = false;
-
-        // Update UI with participants
-        updateParticipantsUI();
-
-    } catch (error) {
-        console.error('Failed to connect to voice room:', error);
-        participantsGrid.innerHTML = `
-      <div style="text-align: center; padding: 40px; grid-column: 1 / -1;">
-        <p style="color: var(--accent-red); font-size: 1.25rem; margin-bottom: 8px;">❌ Failed to connect</p>
-        <p style="color: var(--text-muted);">${escapeHtml(error.message)}</p>
-        <p style="color: var(--text-muted); margin-top: 8px;">Make sure the token server and LiveKit server are running.</p>
-      </div>
-    `;
     }
 
-    // --- Mic toggle ---
-    micBtn.addEventListener('click', async () => {
-        const muted = await toggleMicrophone();
-        micBtn.classList.toggle('muted', muted);
-        micBtn.textContent = muted ? '🔇' : '🎤';
-        micBtn.title = muted ? 'Unmute Microphone' : 'Mute Microphone';
-        updateParticipantsUI();
-    });
+    // Clear previous page
+    app.innerHTML = '';
 
-    // --- Leave room ---
-    leaveBtn.addEventListener('click', async () => {
-        await handleLeave(roomId, userName, onLeave);
-    });
+    // Create UI Structure
+    const container = document.createElement('div');
+    container.className = 'room-layout fade-in';
 
-    // Listen to Firebase participants for count updates
-    const participantsRef = ref(database, `rooms/${roomId}/participants`);
-    participantsListener = onValue(participantsRef, (snapshot) => {
-        const count = snapshot.exists() ? Object.keys(snapshot.val()).length : 0;
-        if (participantCount) {
-            participantCount.textContent = `${count} participant${count !== 1 ? 's' : ''} in room`;
-        }
-    });
-}
+    container.innerHTML = `
+        <header class="room-header glass-card">
+            <h3>🎙️ ${roomName}</h3>
+            <span id="connection-status" class="status-badge connecting">Connecting...</span>
+        </header>
 
-/**
- * Update the participants grid UI
- */
-function updateParticipantsUI() {
-    const grid = document.getElementById('participantsGrid');
-    if (!grid) return;
+        <div id="participants-grid" class="participants-grid">
+            <!-- Avatars appear here -->
+        </div>
 
-    const participants = getParticipants();
-
-    if (participants.length === 0) {
-        grid.innerHTML = `
-      <div style="text-align: center; padding: 40px; grid-column: 1 / -1;">
-        <p style="color: var(--text-muted);">No participants yet...</p>
-      </div>
+        <div class="controls-bar">
+            <button id="mic-btn" class="control-btn" title="Toggle Mic">
+                <span id="mic-icon">🎤</span>
+            </button>
+            <button id="ludo-btn" class="control-btn" title="Play Ludo">
+                <span>🎲</span>
+            </button>
+            <button id="leave-btn" class="control-btn end-call" title="Leave">
+                <span>📞</span>
+            </button>
+        </div>
     `;
+
+    app.appendChild(container);
+
+    // --- Connect to LiveKit ---
+    const statusLabel = document.getElementById('connection-status');
+    const participantsGrid = document.getElementById('participants-grid');
+
+    // Generate a random identity for now (e.g. User-1234)
+    const identity = `User-${Math.floor(Math.random() * 10000)}`;
+
+    try {
+        await connectToRoom(
+            roomName, // We use roomName as room identifier in LiveKit
+            identity,
+            {
+                onParticipantJoined: (p) => renderParticipant(p),
+                onParticipantLeft: (p) => removeParticipant(p.identity),
+                onTrackSubscribed: (track, p) => renderParticipant(p), // Re-render to show speaking status
+                onActiveSpeakerChanged: (speakers) => updateActiveSpeakers(speakers),
+                onDisconnected: () => handleDisconnect(onLeaveRoom)
+            }
+        );
+
+        statusLabel.textContent = 'Connected ✅';
+        statusLabel.className = 'status-badge connected';
+
+        // Initial render of participants
+        const participants = getParticipants();
+        participants.forEach(p => renderParticipant(p));
+
+    } catch (error) {
+        console.error('Failed to connect:', error);
+        statusLabel.textContent = 'Error ❌';
+        statusLabel.className = 'status-badge error';
+        alert(`Failed to connect to room: ${error.message}`);
+        onLeaveRoom();
         return;
     }
 
-    grid.innerHTML = participants.map(p => {
-        const isLocal = p === getCurrentRoom()?.localParticipant;
-        const isMuted = isLocal ? isMicMuted() : !p.isMicrophoneEnabled;
-        const initial = (p.identity || '?')[0].toUpperCase();
-        const name = p.identity || 'Unknown';
+    // --- Event Listeners ---
 
-        return `
-      <div class="participant-card glass-card ${isMuted ? 'muted' : ''}" data-identity="${escapeHtml(name)}">
-        <div class="participant-avatar">${initial}</div>
-        <div class="participant-name">${escapeHtml(name)}${isLocal ? ' (You)' : ''}</div>
-        <div class="participant-status">
-          ${isMuted ? '🔇 Muted' : '🎤 Speaking'}
-        </div>
-      </div>
-    `;
-    }).join('');
+    // Toggle Mic
+    document.getElementById('mic-btn').addEventListener('click', async () => {
+        const isMuted = await toggleMicrophone();
+        const icon = document.getElementById('mic-icon');
+        const btn = document.getElementById('mic-btn');
+
+        if (isMuted) {
+            icon.textContent = '🔇';
+            btn.classList.add('muted');
+        } else {
+            icon.textContent = '🎤';
+            btn.classList.remove('muted');
+        }
+
+        // Update my own tile
+        const myTile = document.getElementById(`tile-${identity}`);
+        if (myTile) {
+            const micStatus = myTile.querySelector('.mic-status');
+            if (micStatus) micStatus.textContent = isMuted ? '🔇' : '🎤';
+        }
+    });
+
+    // Ludo Prank Button
+    document.getElementById('ludo-btn').addEventListener('click', () => {
+        triggerPrank();
+    });
+
+    // Leave Room
+    document.getElementById('leave-btn').addEventListener('click', () => {
+        handleLeave();
+    });
+
+    function handleLeave() {
+        leaveRoom();
+
+        // --- Update Firebase Participant Count (-1) ---
+        if (roomId !== 'oyo-room-permanent' && roomId !== 'gaali-room-permanent') {
+            const roomRef = ref(database, `rooms/${roomId}`);
+            get(roomRef).then((snapshot) => {
+                if (snapshot.exists()) {
+                    const currentCount = snapshot.val().participants || 0;
+                    // Ensure we don't go below 0
+                    const newCount = Math.max(0, currentCount - 1);
+                    update(roomRef, { participants: newCount });
+                }
+            });
+        }
+
+        onLeaveRoom();
+    }
+
+    // --- Helper Functions ---
+
+    function triggerPrank() {
+        const overlay = document.createElement('div');
+        overlay.className = 'prank-overlay';
+        overlay.innerHTML = `
+            <div class="prank-content">
+                <div class="prank-emoji">😡</div>
+                <h1>Baap ka raaj hai?</h1>
+                <h2>Har time Ludo?!</h2>
+                <p>Padhai likhai karo IAS YAS bano!</p>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        // Remove after 4 seconds
+        setTimeout(() => {
+            overlay.classList.add('fade-out');
+            setTimeout(() => overlay.remove(), 500);
+        }, 4000);
+    }
+
+    function renderParticipant(participant) {
+        // Check if tile already exists
+        let tile = document.getElementById(`tile-${participant.identity}`);
+
+        if (!tile) {
+            tile = document.createElement('div');
+            tile.id = `tile-${participant.identity}`;
+            tile.className = 'participant-tile glass-card';
+            participantsGrid.appendChild(tile);
+        }
+
+        const isMuted = !participant.isMicrophoneEnabled;
+        const isSpeaking = participant.isSpeaking;
+
+        tile.className = `participant-tile glass-card ${isSpeaking ? 'speaking' : ''}`;
+
+        tile.innerHTML = `
+            <div class="avatar">${participant.identity.substring(0, 2).toUpperCase()}</div>
+            <div class="participant-name">${participant.identity}</div>
+            <div class="mic-status">${isMuted ? '🔇' : '🎤'}</div>
+        `;
+    }
+
+    function removeParticipant(identity) {
+        const tile = document.getElementById(`tile-${identity}`);
+        if (tile) tile.remove();
+    }
+
+    function updateActiveSpeakers(speakers) {
+        // Reset all speaking borders
+        document.querySelectorAll('.participant-tile').forEach(tile => {
+            tile.classList.remove('speaking');
+        });
+
+        // Highlight active speakers
+        speakers.forEach(speaker => {
+            const tile = document.getElementById(`tile-${speaker.identity}`);
+            if (tile) tile.classList.add('speaking');
+        });
+    }
+
+    function handleDisconnect(callback) {
+        alert('Disconnected from room');
+        callback();
+    }
 }
 
 /**
- * Handle leaving the room
- */
-async function handleLeave(roomId, userName, onLeave) {
-    // Remove from Firebase
-    try {
-        const userRef = ref(database, `rooms/${roomId}/participants/${userName}`);
-        await remove(userRef);
-    } catch (e) {
-        console.error('Error removing participant from Firebase:', e);
-    }
-
-    // Unsubscribe Firebase listener
-    if (participantsListener) {
-        participantsListener();
-        participantsListener = null;
-    }
-
-    // Disconnect from LiveKit
-    await leaveRoom();
-
-    // Navigate back to lobby
-    onLeave();
-}
-
-/**
- * Cleanup room resources
+ * Cleanup function
  */
 export function cleanupRoom() {
-    if (participantsListener) {
-        participantsListener();
-        participantsListener = null;
-    }
     leaveRoom();
-}
-
-// --- Utility ---
-
-function showToast(message) {
-    const existing = document.querySelector('.toast');
-    if (existing) existing.remove();
-
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.textContent = message;
-    document.body.appendChild(toast);
-
-    requestAnimationFrame(() => toast.classList.add('visible'));
-
-    setTimeout(() => {
-        toast.classList.remove('visible');
-        setTimeout(() => toast.remove(), 400);
-    }, 3000);
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }

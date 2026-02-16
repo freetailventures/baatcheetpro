@@ -15,8 +15,8 @@ import {
 // Your self-hosted LiveKit server URL (from .env)
 const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || 'wss://livekit.yourdomain.com';
 
-// Token server URL (our small Express backend)
-const TOKEN_SERVER_URL = import.meta.env.VITE_TOKEN_SERVER_URL || 'http://localhost:3001';
+// Token server URL (Netlify Function)
+const TOKEN_SERVER_URL = '/.netlify/functions';
 
 // The current LiveKit Room instance
 let currentRoom = null;
@@ -28,8 +28,9 @@ let currentRoom = null;
  * @returns {string} JWT token
  */
 async function getToken(roomName, identity) {
+    // Note: We use the relative path to the Netlify Function
     const response = await fetch(
-        `${TOKEN_SERVER_URL}/getToken?room=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`
+        `${TOKEN_SERVER_URL}/token?room=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`
     );
     if (!response.ok) {
         throw new Error('Failed to get token from server');

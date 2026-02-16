@@ -1,126 +1,70 @@
 // ============================================
-// Landing Page — Password Gate
+// Landing Page — The Gatekeeper
 // ============================================
 // This is the first page users see.
-// They must enter the correct password to proceed.
-
-import { database, ref, get } from '../firebase.js';
+// It asks for a password to keep random people out.
 
 /**
- * Render the landing page
- * @param {Function} onSuccess - Called when password is correct, navigates to lobby
+ * Render the Landing Page
+ * @param {Function} onLoginSuccess - Called when password is correct
  */
-export function renderLanding(onSuccess) {
+export function renderLanding(onLoginSuccess) {
     const app = document.getElementById('app');
 
-    app.innerHTML = `
-    <div class="landing-page">
-      <div class="landing-container">
-        <div class="landing-logo">🎙️</div>
-        <h1 class="landing-title">Yaha Baat Karo</h1>
-        <p class="landing-subtitle">Enter the password to join the conversation</p>
-        
-        <form class="landing-form" id="passwordForm">
-          <div class="password-wrapper">
-            <input 
-              type="password" 
-              class="input-field" 
-              id="passwordInput" 
-              placeholder="Enter password..." 
-              autocomplete="off"
-              autofocus
-            />
-            <button type="button" class="password-toggle" id="togglePassword" aria-label="Toggle password visibility">
-              👁️
-            </button>
-          </div>
-          <div class="error-msg" id="errorMsg">
-            <span>⚠️</span>
-            <span id="errorText">Wrong password. Try again!</span>
-          </div>
-          <button type="submit" class="btn btn-primary" id="enterBtn">
-            Enter the Room →
-          </button>
-        </form>
-        
-        <p class="landing-footer">🔒 Password protected group voice chat</p>
-      </div>
-    </div>
-  `;
+    // Clear previous content
+    app.innerHTML = '';
 
-    // --- Event Listeners ---
+    // Create container
+    const container = document.createElement('div');
+    container.className = 'landing-container fade-in';
 
-    const form = document.getElementById('passwordForm');
-    const passwordInput = document.getElementById('passwordInput');
-    const toggleBtn = document.getElementById('togglePassword');
-    const errorMsg = document.getElementById('errorMsg');
-    const errorText = document.getElementById('errorText');
-    const enterBtn = document.getElementById('enterBtn');
+    // Build HTML content
+    container.innerHTML = `
+        <div class="glass-card auth-box">
+            <div class="logo-emoji">🎙️</div>
+            <h1>Yaha Baat Karo</h1>
+            <p>Private Group Voice Chat</p>
+            
+            <form id="login-form">
+                <input type="password" id="password-input" placeholder="Enter Password" required />
+                <button type="submit" class="btn">Enter App</button>
+            </form>
+            <p id="error-msg" style="color: var(--error); display: none; margin-top: 10px;"></p>
+        </div>
+    `;
 
-    // Toggle password visibility
-    toggleBtn.addEventListener('click', () => {
-        const isPassword = passwordInput.type === 'password';
-        passwordInput.type = isPassword ? 'text' : 'password';
-        toggleBtn.textContent = isPassword ? '🙈' : '👁️';
-    });
-
-    // Clear error when typing
-    passwordInput.addEventListener('input', () => {
-        errorMsg.classList.remove('visible');
-        passwordInput.classList.remove('error');
-    });
+    app.appendChild(container);
 
     // Handle form submission
-    form.addEventListener('submit', async (e) => {
+    const form = document.getElementById('login-form');
+    const input = document.getElementById('password-input');
+    const errorMsg = document.getElementById('error-msg');
+
+    form.addEventListener('submit', (e) => {
         e.preventDefault();
+        const password = input.value.trim();
 
-        const enteredPassword = passwordInput.value.trim();
+        // Hardcoded password check (simple & effective)
+        if (password === 'jeetdalla') {
+            // Save session so they don't have to login again if they refresh
+            sessionStorage.setItem('ybk_authenticated', 'true');
+            onLoginSuccess();
+        } else {
+            // Shake animation for error
+            const card = document.querySelector('.glass-card');
+            card.animate([
+                { transform: 'translateX(0)' },
+                { transform: 'translateX(-10px)' },
+                { transform: 'translateX(10px)' },
+                { transform: 'translateX(0)' }
+            ], { duration: 300 });
 
-        if (!enteredPassword) {
-            showError('Please enter a password');
-            return;
-        }
-
-        // Disable button and show loading state
-        enterBtn.disabled = true;
-        enterBtn.innerHTML = '<div class="spinner"></div> Checking...';
-
-        try {
-            // Check password against Firebase
-            const passwordRef = ref(database, 'config/password');
-            const snapshot = await get(passwordRef);
-
-            if (snapshot.exists()) {
-                const correctPassword = snapshot.val();
-
-                if (enteredPassword === correctPassword) {
-                    // ✅ Correct password!
-                    sessionStorage.setItem('ybk_authenticated', 'true');
-                    onSuccess();
-                } else {
-                    // ❌ Wrong password
-                    showError('Wrong password. Try again!');
-                    passwordInput.classList.add('error');
-                    document.querySelector('.landing-container').classList.add('animate-shake');
-                    setTimeout(() => {
-                        document.querySelector('.landing-container')?.classList.remove('animate-shake');
-                    }, 500);
-                }
-            } else {
-                // No password set in Firebase yet
-                showError('App not configured. Contact the admin.');
-            }
-        } catch (error) {
-            console.error('Error checking password:', error);
-            showError('Connection error. Please try again.');
-        } finally {
-            enterBtn.disabled = false;
-            enterBtn.innerHTML = 'Enter the Room →';
+            errorMsg.textContent = 'Incorrect password!';
+            errorMsg.style.display = 'block';
+            input.value = '';
         }
     });
 
-    function showError(message) {
-        errorText.textContent = message;
-        errorMsg.classList.add('visible');
-    }
+    // Auto-focus input
+    input.focus();
 }
