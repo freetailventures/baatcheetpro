@@ -1,11 +1,30 @@
 import { AccessToken } from 'livekit-server-sdk';
-import 'dotenv/config'; // Necessary if testing locally; Netlify injects these automatically in prod
 
-exports.handler = async (event, context) => {
-    // Only allow GET requests (or POST if you prefer, but your frontend uses GET params currently maybe?)
-    // Actually, let's keep it consistent with your express server which used GET
+// Netlify Functions + Vite/ESM environment
+export const handler = async (event, context) => {
+    // CORS Headers (Required for fetch from frontend)
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+    };
+
+    // Handle OPTIONS request (Preflight)
+    if (event.httpMethod === 'OPTIONS') {
+        return {
+            statusCode: 200,
+            headers,
+            body: ''
+        };
+    }
+
+    // Only allow GET
     if (event.httpMethod !== 'GET') {
-        return { statusCode: 405, body: 'Method Not Allowed' };
+        return {
+            statusCode: 405,
+            headers,
+            body: 'Method Not Allowed'
+        };
     }
 
     const { room, identity } = event.queryStringParameters;
@@ -13,6 +32,7 @@ exports.handler = async (event, context) => {
     if (!room || !identity) {
         return {
             statusCode: 400,
+            headers,
             body: JSON.stringify({ error: 'Missing required parameters: room and identity' }),
         };
     }
@@ -21,8 +41,10 @@ exports.handler = async (event, context) => {
     const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 
     if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+        console.error('SERVER ERROR: Missing API Keys');
         return {
             statusCode: 500,
+            headers,
             body: JSON.stringify({ error: 'Server misconfigured: Missing API keys' }),
         };
     }
@@ -45,17 +67,15 @@ exports.handler = async (event, context) => {
 
         return {
             statusCode: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*', // CORS for public access
-            },
+            headers,
             body: JSON.stringify({ token: jwt }),
         };
     } catch (error) {
         console.error('Error generating token:', error);
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: 'Failed to generate token' }),
+            headers,
+            body: JSON.stringify({ error: 'Failed to generate token', details: error.message }),
         };
     }
 };

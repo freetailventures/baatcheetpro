@@ -5,7 +5,7 @@
 // Shows participants and handles audio.
 
 import { connectToRoom, leaveRoom, toggleMicrophone, isMicMuted, getParticipants, getCurrentRoom } from '../livekit.js';
-import { database, ref, update, get } from '../firebase.js';
+import { database, ref, runTransaction, get } from '../firebase.js';
 
 /**
  * Render the Room
@@ -16,17 +16,7 @@ import { database, ref, update, get } from '../firebase.js';
 export async function renderRoom(roomId, roomName, onLeaveRoom) {
     const app = document.getElementById('app');
 
-    // --- Update Firebase Participant Count (+1) ---
-    // We only update if it's a real room (not the static OYO/Gaali ones)
-    if (roomId !== 'oyo-room-permanent' && roomId !== 'gaali-room-permanent') {
-        const roomRef = ref(database, `rooms/${roomId}`);
-        get(roomRef).then((snapshot) => {
-            if (snapshot.exists()) {
-                const currentCount = snapshot.val().participants || 0;
-                update(roomRef, { participants: currentCount + 1 });
-            }
-        });
-    }
+    // (Moved Firebase update logic to after successful connection)
 
     // Clear previous page
     app.innerHTML = '';
@@ -80,8 +70,22 @@ export async function renderRoom(roomId, roomName, onLeaveRoom) {
             }
         );
 
+        // --- SUCCESS! Connected to Room ---
+
         statusLabel.textContent = 'Connected ✅';
         statusLabel.className = 'status-badge connected';
+
+        // Update Firebase Participant Count (+1) ONLY after success
+        if (roomId !== 'oyo-room-permanent' && roomId !== 'gaali-room-permanent') {
+            const roomRef = ref(database, `rooms/${roomId}/participants`);
+            runTransaction(roomRef, (currentCount) => {
+                // If it doesn't exist or is invalid, start at 1
+                if (currentCount === null || typeof currentCount !== 'number') {
+                    return 1;
+                }
+                return currentCount + 1;
+            });
+        }
 
         // Initial render of participants
         const participants = getParticipants();
@@ -91,7 +95,15 @@ export async function renderRoom(roomId, roomName, onLeaveRoom) {
         console.error('Failed to connect:', error);
         statusLabel.textContent = 'Error ❌';
         statusLabel.className = 'status-badge error';
-        alert(`Failed to connect to room: ${error.message}`);
+
+        // Show a more helpful error message
+        let errorMsg = error.message;
+        if (errorMsg.includes('404')) errorMsg = 'Token Server Not Found (Check deploy)';
+        if (errorMsg.includes('500')) errorMsg = 'Token Generation Failed (Check API Keys)';
+
+        alert(`Failed to join room: ${errorMsg}`);
+
+        // Go back to lobby without decrementing (since we never incremented)
         onLeaveRoom();
         return;
     }
@@ -135,14 +147,14 @@ export async function renderRoom(roomId, roomName, onLeaveRoom) {
 
         // --- Update Firebase Participant Count (-1) ---
         if (roomId !== 'oyo-room-permanent' && roomId !== 'gaali-room-permanent') {
-            const roomRef = ref(database, `rooms/${roomId}`);
-            get(roomRef).then((snapshot) => {
-                if (snapshot.exists()) {
-                    const currentCount = snapshot.val().participants || 0;
-                    // Ensure we don't go below 0
-                    const newCount = Math.max(0, currentCount - 1);
-                    update(roomRef, { participants: newCount });
+            const roomRef = ref(database, `rooms/${roomId}/participants`);
+            runTransaction(roomRef, (currentCount) => {
+                // If it doesn't exist or is invalid, assume 0
+                if (currentCount === null || typeof currentCount !== 'number') {
+                    return 0;
                 }
+                // Ensure we don't go below 0
+                return Math.max(0, currentCount - 1);
             });
         }
 
