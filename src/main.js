@@ -7,8 +7,8 @@
 
 import '../style.css';
 import { renderLanding } from './pages/landing.js';
-import { renderLobby, cleanupLobby } from './pages/lobby.js';
-import { renderRoom, cleanupRoom } from './pages/room.js';
+import { renderLobby } from './pages/lobby.js';
+import { renderRoom } from './pages/room.js';
 
 // --- Page Router ---
 // This simple router swaps page content based on which page we want to show.
