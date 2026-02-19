@@ -1,6 +1,6 @@
-import { AccessToken } from 'livekit-server-sdk';
+import jwt from 'jsonwebtoken';
 
-// Netlify Functions + Vite/ESM environment
+// Netlify Functions + ESM environment
 export const handler = async (event, context) => {
     // CORS Headers (Required for fetch from frontend)
     const headers = {
@@ -50,25 +50,32 @@ export const handler = async (event, context) => {
     }
 
     try {
-        const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-            identity: identity,
-            ttl: '6h',
-        });
+        const now = Math.floor(Date.now() / 1000);
 
-        token.addGrant({
-            room: room,
-            roomJoin: true,
-            canPublish: true,
-            canSubscribe: true,
-            canPublishData: true,
-        });
+        const payload = {
+            iss: LIVEKIT_API_KEY,
+            sub: identity,
+            nbf: now,
+            exp: now + 6 * 60 * 60, // 6 hours
+            video: {
+                room: room,
+                roomJoin: true,
+                canPublish: true,
+                canSubscribe: true,
+                canPublishData: true,
+            }
+        };
 
-        const jwt = await token.toJwt();
+        // Using jsonwebtoken directly — generates standard {"alg":"HS256","typ":"JWT"} header
+        // which is required by LiveKit server's go-jose JWT verification
+        const token = jwt.sign(payload, LIVEKIT_API_SECRET, {
+            algorithm: 'HS256',
+        });
 
         return {
             statusCode: 200,
             headers,
-            body: JSON.stringify({ token: jwt }),
+            body: JSON.stringify({ token }),
         };
     } catch (error) {
         console.error('Error generating token:', error);
