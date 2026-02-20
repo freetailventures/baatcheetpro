@@ -19,7 +19,8 @@ let currentRoom = null;
 /**
  * Get a LiveKit token from our token server
  */
-async function getToken(roomName, identity) {
+export async function getToken(roomName, identity) {
+
     const response = await fetch(
         `${TOKEN_SERVER_URL}/token?room=${encodeURIComponent(roomName)}&identity=${encodeURIComponent(identity)}`
     );
@@ -33,7 +34,8 @@ async function getToken(roomName, identity) {
 /**
  * Build a plain array of participant info for the UI
  */
-function buildParticipantList(room) {
+export function buildParticipantList(room) {
+
     const all = [];
 
     // Local participant
@@ -61,6 +63,14 @@ function buildParticipantList(room) {
 
 /**
  * Connect to a LiveKit voice room
+ * @param {string} roomName - The room to join
+ * @param {string} identity - Your display name
+ * @param {object} callbacks - Event callbacks
+ * @param {Function} callbacks.onConnected - Called when fully connected
+ * @param {Function} callbacks.onDisconnected - Called when disconnected
+ * @param {Function} callbacks.onParticipantsChanged - Called with full participant array on any change
+ * @param {Function} callbacks.onError - Called on error
+ * @returns {Room} The LiveKit room instance
  */
 export async function connectToRoom(roomName, identity, callbacks = {}) {
     // Step 1: Get a token from our token server
@@ -79,7 +89,7 @@ export async function connectToRoom(roomName, identity, callbacks = {}) {
 
     // Step 3: Set up event listeners
 
-    // FIX: Fire onConnected when room is actually connected
+    // ✅ FIX: Fire onConnected when room is actually connected
     room.on(RoomEvent.Connected, () => {
         callbacks.onConnected?.();
         notifyParticipants(); // show local participant immediately
@@ -96,7 +106,7 @@ export async function connectToRoom(roomName, identity, callbacks = {}) {
     });
 
     // When a track is removed
-    room.on(RoomEvent.TrackUnsubscribed, (track) => {
+    room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
         track.detach().forEach(el => el.remove());
         notifyParticipants();
     });
@@ -118,7 +128,7 @@ export async function connectToRoom(roomName, identity, callbacks = {}) {
         notifyParticipants();
     });
 
-    // When local track is published
+    // When microphone is toggled
     room.on(RoomEvent.LocalTrackPublished, () => {
         notifyParticipants();
     });
@@ -128,7 +138,7 @@ export async function connectToRoom(roomName, identity, callbacks = {}) {
         callbacks.onDisconnected?.();
     });
 
-    // Step 4: Connect to the room
+    // Step 4: Connect to the room (resolves when signaling + ICE is done)
     try {
         await room.connect(LIVEKIT_URL, token);
     } catch (err) {
@@ -146,12 +156,13 @@ export async function connectToRoom(roomName, identity, callbacks = {}) {
 
 /**
  * Toggle microphone on/off
+ * @returns {boolean} true if now muted
  */
 export async function toggleMicrophone() {
     if (!currentRoom) return false;
     const isEnabled = currentRoom.localParticipant.isMicrophoneEnabled;
     await currentRoom.localParticipant.setMicrophoneEnabled(!isEnabled);
-    return isEnabled;
+    return isEnabled; // was enabled, now muted
 }
 
 /**
@@ -186,3 +197,6 @@ export async function leaveRoom() {
 export function getCurrentRoom() {
     return currentRoom;
 }
+
+// Alias for compatibility with VoiceContext
+export const disconnectRoom = leaveRoom;

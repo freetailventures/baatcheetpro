@@ -1,0 +1,22 @@
+@import './styles/theme.css';
+
+/* Basic Reset */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-main);
+    background-color: var(--color-bg);
+    color: var(--color-black);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Ensure full height for app root */
+#root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}

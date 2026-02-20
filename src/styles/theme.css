@@ -1,0 +1,52 @@
+:root {
+    /* Bubblegum Brutalit Palette (from Stitch Designs) */
+    --color-pink: #FFB7D5;
+    --color-lavender: #C5A3FF;
+    --color-mint: #A3FFD6;
+    --color-coral: #FFA07A;
+    --color-yellow: #FFE5A0;
+    --color-white: #FFFFFF;
+    --color-black: #000000;
+    --color-bg: #F0E6FF;
+    /* Soft Lavender Backend */
+
+    /* Brutalist Spacing & Radius */
+    --border-thick: 3px;
+    --border-radius-hard: 16px;
+    --border-radius-pill: 999px;
+
+    /* Shadows */
+    --shadow-block: 4px 4px 0px #000000;
+    --shadow-block-hover: 2px 2px 0px #000000;
+
+    /* Typography */
+    --font-main: 'Space Grotesk', sans-serif;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-main);
+    background-color: var(--color-bg);
+    color: var(--color-black);
+}
+
+/* Global Utility Classes */
+.brutalist-card {
+    background: var(--color-white);
+    border: var(--border-thick) solid var(--color-black);
+    box-shadow: var(--shadow-block);
+    border-radius: var(--border-radius-hard);
+}
+
+.brutalist-btn {
+    font-weight: bold;
+    border: var(--border-thick) solid var(--color-black);
+    box-shadow: var(--shadow-block);
+    transition: all 0.1s ease;
+    cursor: pointer;
+}
+
+.brutalist-btn:active {
+    box-shadow: var(--shadow-block-hover);
+    transform: translate(2px, 2px);
+}
